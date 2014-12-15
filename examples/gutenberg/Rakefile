@@ -1,0 +1,88 @@
+require 'rake/data'
+
+## Load the html file with statistics
+url "source/top.html", "http://www.gutenberg.org/browse/scores/top"
+
+## Parse out the varius parts of the file into CSV form
+parse_html "processed/todays_top_100.csv", "source/top.html" do |html,out|
+  html.css( "h2#books-last1 + ol a" ).each do |link|
+    out << [link['href'],link.content]
+  end
+end
+
+parse_html "processed/month_top_100.csv", "source/top.html" do |html,out|
+  html.css( "h2#books-last30 + ol a" ).each do |link|
+    out << [link['href'],link.content]
+  end
+end
+
+## Give me the top 10 books only
+
+slice "processed/month_top_10.csv", "processed/month_top_100.csv", 1, 10
+
+## Loop through the top ten books and make sure that they exist
+file_loop "processed/top_10_books_text", "processed/month_top_10.csv" do |line|
+  path = "#{line[0].gsub( /^\//, "" )}.txt"
+  puts path
+  url( path, "http://www.gutenberg.org/#{path}.utf-8")
+  Rake::Task[path].invoke
+end
+
+## Covert txt to words
+rule ".words" => ".txt" do |dest|
+  sh "cat #{dest.source} | tr -cs '[:alpha:]' '\n' | tr '[:upper:]' '[:lower:]' > #{dest}"
+end
+
+# Count and sort the list of words
+rule ".word_count" => ".words" do |dest|
+  sh "cat #{dest.source} | sort | uniq -c | sort -nr> #{dest}"
+end
+
+# Remove stop words from the list
+rule ".word_count_cleaned" => ".word_count" do |dest|
+  Rake::Task["processed/stopwords"].invoke
+  sh "grep -v -f processed/stopwords #{dest.source} > #{dest}"
+end
+
+## Load list of stop words
+
+url "source/mysql/stopwords.html", "http://dev.mysql.com/doc/refman/5.5/en/fulltext-stopwords.html"
+
+parse_html "processed/stopwords", "source/mysql/stopwords.html" do |html,out|
+  html.css( "div.informaltable td" ).each do |word|
+    out << [word.content]
+  end
+end
+
+## Parse metadata
+
+rule ".metadata" => ".txt" do |dest|
+  sh "sed '/\\*\\*\\* START OF THIS PROJECT/q' #{dest.source} > #{dest}"
+end
+
+rule ".json" => ".metadata" do |dest|
+  require 'json'
+  metadata = {}
+  File.readlines( dest.source ).each do |line|
+    case line.chomp
+    when /Title: (.*)/
+      metadata[:title] = $1
+    when /Author: (.*)/
+      metadata[:author] = $1
+    when /Release Date: (.*)/
+      metadata[:release_date] = $1
+    end
+  end
+  File.open( dest.to_s, "wb" ) do |out|
+    out.puts metadata.to_json
+  end
+end
+
+file_loop "load_metadata", "processed/month_top_10.csv" do |line|
+  Rake::Task['processed/top_10_books_text'].invoke
+  task_name = line[0].gsub( /^\//, "" )
+  task_name += ".json"
+  Rake::Task[task_name].invoke
+end
+
+task :default => "load_metadata"

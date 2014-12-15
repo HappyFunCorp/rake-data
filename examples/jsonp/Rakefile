@@ -1,0 +1,6 @@
+require 'rake/data/ajax'
+
+# The callback function for this reqest is "my_func"
+url "source/weather.jsonp", "http://api.openweathermap.org/data/2.5/weather?id=5128581&callback=weather"
+
+task :default => "processed/weather.json"

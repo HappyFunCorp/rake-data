@@ -1,0 +1,10 @@
+require 'rake/data/wikipedia'
+
+# http://en.wikipedia.org/wiki/Lists_of_100_best_books
+
+task :default => wikipedia_list( "world%27s_largest_ships_by_gross_tonnage" )
+task :default => wikipedia_list( "countries_by_area" )
+task :default => wikipedia_lists_of( "100_best_books" )
+task :default => wikipedia_list( "elevation_extremes_by_country" )
+
+# file "data/countries_by_area.csv" => "source/countries_by_area.csv"

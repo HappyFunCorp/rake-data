@@ -1,0 +1,95 @@
+require 'rake/data/redis'
+require 'rake/data/csv'
+
+# Define source data from cityofnewyork
+url "source/babynames.csv", "https://data.cityofnewyork.us/api/views/25th-nujf/rows.csv?accessType=DOWNLOAD"
+
+# Clean up duplicate lines
+dedup "processed/babynames.csv", "source/babynames.csv"
+
+# Find the unique values of the two columns
+unique_values "processed/ethnicies.csv", "processed/babynames.csv", "ETHCTY,GNDR"
+
+# Examples of totaling up columns with different dimensions
+total_column "processed/sample_size.csv", "processed/babynames.csv", "CNT"
+total_column "processed/sample_size_by_gender.csv", "processed/babynames.csv", "CNT", "GNDR"
+total_column "processed/sample_size_by_ethnicity.csv", "processed/babynames.csv", "CNT", "ETHCTY"
+total_column "processed/sample_size_by_ethnicity_and_gender.csv", "processed/babynames.csv", "CNT", "ETHCTY,GNDR"
+
+# Add dependant task
+task "processed/scaled_babynames.csv" => "processed/sample_size_by_ethnicity_and_gender.csv"
+csv_transform "processed/scaled_babynames.csv", "processed/babynames.csv" do |in_row,out|
+  if in_row[0] == 'BRTH_YR'
+    out << ["GNDR", "ETHCTY", "NAME", "CNT", "TTL", "SCALED" ]
+  else
+    total = csv_read_val( "processed/sample_size_by_ethnicity_and_gender.csv", "CNT", { "ETHCTY" => in_row[2], "GNDR" => in_row[1] } )
+    value = in_row[4].to_f / total.to_f
+    out << [in_row[1], in_row[2], in_row[3], in_row[4], total, value]
+  end
+end
+
+# Make sure we are adding things correctly
+total_column "processed/total_sample_size_by_ethnicity_and_gender.csv", "processed/scaled_babynames.csv", "SCALED", "ETHCTY,GNDR"
+
+# Load the data into redis sorted sets
+file_loop "load_names", "processed/scaled_babynames.csv" do |row,values|
+  # BRTH_YR,GNDR,ETHCTY,NM,CNT,RNK
+  if values['GNDR'] == 'GNDR'
+    puts "Loading babynames.csv into redis"
+  else
+    redis.sadd "baby_names", values['NAME']
+    set_name = "baby_names:#{values['GNDR']}:#{values['ETHCTY']}"
+    redis.sadd "ethnicies:#{values['GNDR']}", set_name
+
+    # get scale value
+    redis.zadd set_name, values['SCALED'], values['NAME']
+  end
+end
+
+# Process the sorted sets
+task "gender_totals" => "load_names" do
+  male_set = redis.smembers "ethnicies:MALE"
+  female_set = redis.smembers "ethnicies:FEMALE"
+
+  # Sum up the sets
+  puts "Creating male totals"
+  redis.zunionstore "baby_names:MALE", male_set
+  puts "Creating female totals"
+  redis.zunionstore "baby_names:FEMALE", female_set
+
+  # Find the unique names
+  [male_set,female_set].each do |gender_set|
+    gender_set.each do |ethnicity|
+      sets = gender_set.select { |x| x != ethnicity }
+      sets.unshift( ethnicity )
+
+      weights = sets.collect { |x| x == ethnicity ? 1 : -1 }
+
+      puts "Generating uniq:#{ethnicity}"
+      redis.zinterstore "uniq:#{ethnicity}", sets, weights: weights
+    end
+  end
+end
+
+redis_dump_sorted_set "processed/top_10_male.csv", "gender_totals", "baby_names:MALE", 0, 10
+redis_dump_sorted_set "processed/top_10_female.csv", "gender_totals", "baby_names:FEMALE", 0, 10
+
+task "dump_totals" => "processed/top_10_male.csv"
+task "dump_totals" => "processed/top_10_female.csv"
+
+# Export the data from redis
+task "dump_totals" => "gender_totals" do
+  male_set = redis.smembers "ethnicies:MALE"
+  female_set = redis.smembers "ethnicies:FEMALE"
+
+  # Define the task and invoke them right away
+
+  (male_set + female_set).each do |set|
+    file = "processed/unique_#{set.downcase.gsub( /[ :]/, '_')}.csv"
+    mkdir_p file.pathmap( "%d")
+    redis_dump_sorted_set file, "gender_totals", "uniq:#{set}", 0, 10
+    Rake::Task[file].invoke
+  end
+end
+
+task :default => "dump_totals"

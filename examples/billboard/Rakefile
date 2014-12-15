@@ -1,0 +1,8 @@
+require 'rake/data/wikipedia'
+require 'rake/data/redis'
+
+data_files = (2000..2012).collect do |year|
+  wikipedia_list( "Billboard_200_number-one_albums_of_#{year}" )
+end
+
+task :number_1_albums => data_files

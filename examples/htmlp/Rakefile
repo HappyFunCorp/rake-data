@@ -1,0 +1,22 @@
+require 'rake/data/ajax'
+
+# This returns html wrapped in javascript
+url "source/team.htmlp", "http://happyfuncorp.com/team"
+
+parse_html "processed/team.csv", "processed/team.html" do |html, csv|
+  html.css( ".employee" ).each do |e|
+    name = e.css( "h4" ).first.content
+    title = e.css( "h6" ).first
+    title = title.content if title
+    avatar = e.css( "img.color" ).first
+    if avatar
+      avatar = avatar.attr("data-at2x") || avatar.attr( "src" )
+    end
+
+    file = name.downcase.gsub( /\s/, "_").gsub( /$/, ".jpg")
+
+    csv << [name,title,file,avatar]
+  end
+end
+
+task :default => "processed/team.csv"
