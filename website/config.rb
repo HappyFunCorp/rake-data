@@ -4,6 +4,8 @@ page "CNAME", layout: false
 set :css_dir, 'stylesheets'
 set :js_dir, 'javascripts'
 set :images_dir, 'images'
+set :source, 'src'
+set :source_dir, "#{File.dirname(__FILE__)}/#{source}"
 
 # Better markdown support
 # set :markdown, :tables => true, :autolink => true, :gh_blockcode => true, :fenced_code_blocks => true
