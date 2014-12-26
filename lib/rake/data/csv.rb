@@ -80,11 +80,19 @@ def total_column dest, src, sum_column, group_by = nil
 end
 
 def csv_transform dest, source, &block
-  task dest => source do
-    CSV.open( dest, "wb" ) do |out|
-      CSV.open( source ).each do |row|
-        yield row, out
+  CSV.open( dest, "wb" ) do |out|
+    first_row = nil
+    CSV.open( source ).each do |row|
+      first_row ||= row
+      values = Hash.new do |h,k|
+        idx = first_row.index(k)
+        if idx
+          h[k] = row[idx]
+        else
+          nil
+        end
       end
+      yield row, out, values, first_row
     end
   end
 end

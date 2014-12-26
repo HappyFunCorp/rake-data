@@ -30,6 +30,9 @@ data_rule ".csv", ".wikipedia.html" do |dest|
       end
     end
 
+    # require 'pp'
+    # pp data
+
     csv << row_data_with_links( header_columns, column_has_link, true )
     data.each do |row|
       csv << row_data_with_links( row, column_has_link )
@@ -40,11 +43,15 @@ end
 def table_columns( row, selector )
   columns = row.css( selector ).collect do |column|
     # Find the text column
-    text = column.children.select do |x|
-      x.name == "text"
-    end.collect do |x|
-      x.content.gsub( /^\s*/, "" ).gsub( /\s*$/, "" )
-    end.join( " " )
+    text = column.children.text
+    if text
+      text = text.gsub( /^\s*/, "" ).gsub( /\s*$/, "" )
+    end
+    # select do |x|
+    #   x.name == "text"
+    # end.collect do |x|
+    #   x.content.gsub( /^\s*/, "" ).gsub( /\s*$/, "" )
+    # end.join( " " )
 
     link = column.css( "a" ).first
     if link
@@ -54,6 +61,8 @@ def table_columns( row, selector )
       end.collect do |x|
         x.content.gsub( /^\s*/, "" ).gsub( /\s*$/, "" )
       end.join( " " )
+
+      link_text = link_text.gsub( /^\s*/, "" ).gsub( /\s*$/, "" )
 
       text = [link_text,href]
     end

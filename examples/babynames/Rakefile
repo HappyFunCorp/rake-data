@@ -18,16 +18,18 @@ total_column "processed/sample_size_by_ethnicity_and_gender.csv", "processed/bab
 
 # Add dependant task
 task "processed/scaled_babynames.csv" => "processed/sample_size_by_ethnicity_and_gender.csv"
-csv_transform "processed/scaled_babynames.csv", "processed/babynames.csv" do |in_row,out|
-  if in_row[0] == 'BRTH_YR'
-    out << ["GNDR", "ETHCTY", "NAME", "CNT", "TTL", "SCALED" ]
-  else
-    total = csv_read_val( "processed/sample_size_by_ethnicity_and_gender.csv", "CNT", { "ETHCTY" => in_row[2], "GNDR" => in_row[1] } )
-    value = in_row[4].to_f / total.to_f
-    out << [in_row[1], in_row[2], in_row[3], in_row[4], total, value]
+
+file "processed/scaled_babynames.csv" => "processed/babynames.csv" do
+  csv_transform "processed/scaled_babynames.csv", "processed/babynames.csv" do |in_row,out|
+    if in_row[0] == 'BRTH_YR'
+      out << ["GNDR", "ETHCTY", "NAME", "CNT", "TTL", "SCALED" ]
+    else
+      total = csv_read_val( "processed/sample_size_by_ethnicity_and_gender.csv", "CNT", { "ETHCTY" => in_row[2], "GNDR" => in_row[1] } )
+      value = in_row[4].to_f / total.to_f
+      out << [in_row[1], in_row[2], in_row[3], in_row[4], total, value]
+    end
   end
 end
-
 # Make sure we are adding things correctly
 total_column "processed/total_sample_size_by_ethnicity_and_gender.csv", "processed/scaled_babynames.csv", "SCALED", "ETHCTY,GNDR"
 

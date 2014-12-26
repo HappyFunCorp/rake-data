@@ -1,0 +1,24 @@
+require 'rake/data'
+
+url "Rio", "https://github.com/jeroenjanssens/data-science-at-the-command-line/raw/master/tools/Rio"
+
+url "source/iris.csv", "https://raw.githubusercontent.com/pydata/pandas/master/pandas/tests/data/iris.csv"
+
+task "length" => ["Rio", "source/iris.csv"] do
+  sh "< source/iris.csv bash Rio -e 'df$SepalLength^2'"
+end
+
+task "summary" => ["Rio", "source/iris.csv"] do
+  sh "< source/iris.csv bash Rio -f summary"
+end
+
+task "sqldf" => ["Rio", "source/iris.csv"] do
+  sh "< source/iris.csv bash Rio -se 'sqldf(\"select Name from df where df.SepalLength > 7\")'"
+end
+
+file "processed/iris.png" => ["Rio", "source/iris.csv"] do
+  mkdir_p "processed"
+  sh "< source/iris.csv bash Rio -ge 'g+geom_point(aes(x=SepalLength,y=SepalWidth,colour=Name))' > processed/iris.png"
+end
+
+task default: "processed/iris.png"

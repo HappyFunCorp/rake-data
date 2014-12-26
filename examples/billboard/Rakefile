@@ -1,8 +1,82 @@
 require 'rake/data/wikipedia'
+require 'rake/data/csv'
 require 'rake/data/redis'
 
 data_files = (2000..2012).collect do |year|
   wikipedia_list( "Billboard_200_number-one_albums_of_#{year}" )
+  Rake::Task["processed/Billboard_200_number-one_albums_of_#{year}.csv"].invoke
+  year_file = "processed/billboard_#{year}.csv"
+  year_file
 end
 
-task :number_1_albums => data_files
+rule /billboard_\d\d\d\d.csv/ do |task|
+  infile = task.to_s.gsub( /billboard_/, "Billboard_200_number-one_albums_of_" )
+  puts "#{infile} -> #{task}"
+  previous = nil
+  csv_transform task.to_s, infile do |line,out,values|
+    if values['Issue Date'] == 'Issue Date' || values['Issue date'] == "Issue date"
+      out << ["Date", "Artist", "Artist Link", "Album", "Album Link" ]
+    else
+      if values['Artist(s)'] || values['Artist'] || values['Artist(s)al']
+        previous = [
+          values['Issue Date'] || values['Issue date'], 
+          values['Artist(s)'] || values['Artist'] || values['Artist(s)al'],
+          values['Artist(s) link'] || values['Artist link'] || values['Artist(s)al link'],
+          values['Album'],
+          values['Album link']
+        ]
+        out << previous
+      elsif previous
+        previous[0] = (values['Issue Date'] || values['Issue date'])
+        out << previous
+      end
+    end
+  end
+end
+
+task number_1_albums: data_files
+
+task load_data: :number_1_albums do
+  Dir.glob( "processed/billboard*csv" ).each do |f|
+    if f =~ /(\d\d\d\d).csv/
+      year = $1
+
+      puts "Loading #{year}"
+
+      CSV.open( f ).each do |row|
+        artist = row[1]
+        album = row[3]
+
+        redis.sadd "artists", artist
+        redis.sadd "albums", album
+
+        redis.sadd "artist:#{artist}", row[0]
+        redis.sadd "album:#{artist}", album
+
+        redis.zadd( "ranks", redis.scard( "artist:#{artist}" ), artist )
+      end
+    end
+  end
+end
+
+task stats: :load_data do
+  puts "Total artists: #{redis.scard "artists"}"
+  puts "Total albums : #{redis.scard "albums"}"
+end
+
+redis_dump_sorted_set "processed/sub_totals.csv", :stats, "ranks"
+
+file "processed/totals.csv" => "processed/sub_totals.csv" do |task|
+  previous = nil
+  csv_transform task.to_s, task.source do |row,out,values|
+    unless previous
+      out << ["Artist", "Weeks", "Alumn Count", "Alumns"]
+      previous = true
+    end
+
+    members = redis.smembers( "album:#{row[0]}" )
+    out << [ row[0], row[1].to_i, members.size, members.join( ",") ]
+  end
+end
+
+task default: "processed/totals.csv"
